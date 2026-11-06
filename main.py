@@ -1,4 +1,4 @@
-"""Κεντρικό entrypoint εκπαίδευσης, visualization και export."""
+"""Κεντρικό entrypoint εκπαίδευσης, visualization και export (V3: Pot & In-Ground)."""
 
 from sklearn.model_selection import train_test_split
 from src.config import CATEGORICAL_FEATURES, NUMERICAL_FEATURES
@@ -9,11 +9,11 @@ from src.visualizer import ModelVisualizer, AccuracyVisualizer
 
 
 def main():
-    print("1/4 Generating synthetic plant dataset...")
-    df = SyntheticPlantDataGeneratorV2.generate(n_samples=5000)
+    print("1/4 Generating synthetic plant dataset (Pot & In-Ground FAO-56)...")
+    df = SyntheticPlantDataGeneratorV2.generate(n_samples=5000, seed=42)
 
     print("2/4 Training Hybrid Pipeline...")
-    trainer = ModelTrainerV2(alpha=0.1)
+    trainer = ModelTrainerV2(alpha=0.5, epsilon=1.35)
     pipeline, metrics = trainer.train_and_evaluate(df)
 
     print("\n--- Pipeline Evaluation Metrics ---")
@@ -21,17 +21,23 @@ def main():
     print(f"Hybrid Engine MAE    : {metrics['hybrid_mae']:.3f} days")
     print(f"Accuracy Gain        : {metrics['improvement_pct']:.2f}%")
     print(f"Residual R² Score    : {metrics['residual_r2']:.3f}")
+    if metrics.get('pot_hybrid_mae') is not None:
+        print(f"  • Potted Hybrid MAE: {metrics['pot_hybrid_mae']:.3f} days")
+    if metrics.get('ground_hybrid_mae') is not None:
+        print(f"  • Ground Hybrid MAE: {metrics['ground_hybrid_mae']:.3f} days")
     print("-----------------------------------\n")
 
     print("3/4 Generating Evaluation Plots...")
-    # Κρατάμε το ίδιο test split για τη σχεδίαση των γραφημάτων
-    X = df[CATEGORICAL_FEATURES + NUMERICAL_FEATURES]
+    # Φιλτράρισμα ενεργών φυτών ώστε τα γραφήματα να αποτυπώνουν το πεδίο εκπαίδευσης
+    active_df = df[df["is_dormant"] == 0].copy() if "is_dormant" in df.columns else df.copy()
+
+    X = active_df[CATEGORICAL_FEATURES + NUMERICAL_FEATURES]
     _, X_test, _, _ = train_test_split(
-        X, df["residual_target"], test_size=0.2, random_state=42
+        X, active_df["residual_target"], test_size=0.2, random_state=42
     )
 
-    actual_test = df.loc[X_test.index, "actual_days"]
-    baseline_test = df.loc[X_test.index, "baseline_prediction"]
+    actual_test = active_df.loc[X_test.index, "actual_days"]
+    baseline_test = active_df.loc[X_test.index, "baseline_prediction"]
     hybrid_test = baseline_test + pipeline.predict(X_test)
 
     # 1. Βασικά διαγράμματα παλινδρόμησης (Parity, Residual distribution, Feature weights)
@@ -53,8 +59,8 @@ def main():
         output_dir="reports/figures",
     )
 
-    # 3. Ανάλυση σφάλματος ανά κατηγορία φυτού και υλικό γλάστρας
-    test_df = df.loc[X_test.index].copy()
+    # 3. Ανάλυση σφάλματος ανά κατηγορία φυτού, υλικό και περιβάλλον
+    test_df = active_df.loc[X_test.index].copy()
     test_df["hybrid_prediction"] = hybrid_test
     ModelVisualizer.plot_category_error_breakdown(
         test_df=test_df,
@@ -63,6 +69,12 @@ def main():
 
     # 4. Ανάλυση αποφάσεων λίπανσης & θερμοκρασιακών δικλείδων ασφαλείας
     ModelVisualizer.plot_fertilizer_summary(
+        df=df,
+        output_dir="reports/figures",
+    )
+
+    # Νέο: Ανάλυση υδρολογίας εδάφους & mulching
+    ModelVisualizer.plot_ground_hydrology_profile(
         df=df,
         output_dir="reports/figures",
     )

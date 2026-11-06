@@ -1,4 +1,4 @@
-"""Module παραγωγής διαγραμμάτων αξιολόγησης για το μοντέλο ποτίσματος και λίπανσης."""
+"""Module παραγωγής διαγραμμάτων αξιολόγησης για το υβριδικό μοντέλο ποτίσματος και λίπανσης V3."""
 
 import os
 from typing import List
@@ -9,7 +9,7 @@ from sklearn.pipeline import Pipeline
 
 
 class ModelVisualizer:
-    """Οπτικοποίηση απόδοσης και ερμηνείας βαρών του υβριδικού μοντέλου."""
+    """Οπτικοποίηση απόδοσης, ερμηνείας βαρών και κατανομής σφαλμάτων (Γλάστρα & Έδαφος)."""
 
     @staticmethod
     def plot_evaluation(
@@ -28,7 +28,7 @@ class ModelVisualizer:
             if "seaborn-v0_8-whitegrid" in plt.style.available
             else "default"
         )
-        fig = plt.figure(figsize=(18, 5), dpi=150)
+        fig = plt.figure(figsize=(18, 5.5), dpi=150)
 
         # 1. Parity Plot
         ax1 = fig.add_subplot(1, 3, 1)
@@ -101,7 +101,7 @@ class ModelVisualizer:
         ax2.set_ylabel("Sample Frequency", fontsize=10)
         ax2.legend(loc="upper right", frameon=True)
 
-        # 3. Feature Importance (Weights)
+        # 3. Top Feature Weights
         ax3 = fig.add_subplot(1, 3, 3)
         regressor = pipeline.named_steps["regressor"]
         preprocessor = pipeline.named_steps["preprocessor"]
@@ -144,11 +144,10 @@ class ModelVisualizer:
         hybrid_col: str = "hybrid_prediction",
         output_dir: str = "reports/figures",
     ) -> None:
-        """Συγκριτικό MAE σφάλματος ανά κατηγορία φυτού και τύπο γλάστρας."""
+        """Συγκριτικό MAE ανά κατηγορία φυτού, υλικό δοχείου και περιβάλλον (Γλάστρα vs Έδαφος)."""
         os.makedirs(output_dir, exist_ok=True)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), dpi=150)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5), dpi=150)
 
-        # Υπολογισμός απόλυτων σφαλμάτων
         test_df = test_df.copy()
         test_df["base_ae"] = (test_df[actual_col] - test_df[baseline_col]).abs()
         test_df["hybr_ae"] = (test_df[actual_col] - test_df[hybrid_col]).abs()
@@ -182,13 +181,14 @@ class ModelVisualizer:
         )
         ax1.set_ylabel("Mean Absolute Error (Days)", fontsize=10)
         ax1.set_title(
-            "Watering Error per Plant Category", fontsize=11, fontweight="bold"
+            "Error per Plant Category", fontsize=11, fontweight="bold"
         )
         ax1.legend()
 
-        # 2. Σφάλμα ανά Pot Type
+        # 2. Σφάλμα ανά Pot Type (Μόνο για όσα έχουν γλάστρα)
+        pot_df = test_df[test_df["pot_type"] != "none_ground"]
         pot_grp = (
-            test_df.groupby("pot_type")[["base_ae", "hybr_ae"]]
+            pot_df.groupby("pot_type")[["base_ae", "hybr_ae"]]
             .mean()
             .reset_index()
         )
@@ -214,17 +214,111 @@ class ModelVisualizer:
         )
         ax2.set_ylabel("Mean Absolute Error (Days)", fontsize=10)
         ax2.set_title(
-            "Watering Error per Container Material",
+            "Error per Container Material", fontsize=11, fontweight="bold"
+        )
+        ax2.legend()
+
+        # 3. Σφάλμα ανά Περιβάλλον (Pot vs In-Ground)
+        env_grp = (
+            test_df.groupby("planting_environment")[["base_ae", "hybr_ae"]]
+            .mean()
+            .reset_index()
+        )
+        x_env = np.arange(len(env_grp))
+
+        ax3.bar(
+            x_env - width / 2,
+            env_grp["base_ae"],
+            width,
+            label="Baseline MAE",
+            color="#94a3b8",
+        )
+        ax3.bar(
+            x_env + width / 2,
+            env_grp["hybr_ae"],
+            width,
+            label="Hybrid MAE",
+            color="#f59e0b",
+        )
+        ax3.set_xticks(x_env)
+        ax3.set_xticklabels(
+            ["In-Ground (Κήπος)", "Potted (Γλάστρα)"], fontsize=10
+        )
+        ax3.set_ylabel("Mean Absolute Error (Days)", fontsize=10)
+        ax3.set_title(
+            "Error: Pot vs In-Ground Environment",
             fontsize=11,
             fontweight="bold",
         )
-        ax2.legend()
+        ax3.legend()
 
         plt.tight_layout()
         save_path = os.path.join(output_dir, "category_error_breakdown.png")
         plt.savefig(save_path, bbox_inches="tight")
         plt.close()
         print(f"[Plots Generated] Saved category breakdown to: {save_path}")
+
+    @staticmethod
+    def plot_ground_hydrology_profile(
+        df: pd.DataFrame, output_dir: str = "reports/figures"
+    ) -> None:
+        """Οπτικοποίηση υδρολογικής απόκρισης του ανοιχτού εδάφους (In-Ground Hydraulics)."""
+        ground_df = df[df["planting_environment"] == "in_ground"].copy()
+        if ground_df.empty:
+            return
+
+        os.makedirs(output_dir, exist_ok=True)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), dpi=150)
+
+        # 1. Επίδραση Τύπου Εδάφους στο Διάστημα Ποτίσματος
+        soil_order = ["sandy_coastal", "rocky_chalky", "balanced_loam", "clay_heavy"]
+        existing_soils = [s for s in soil_order if s in ground_df["soil_type"].unique()]
+        soil_means = ground_df.groupby("soil_type")["actual_days"].mean().reindex(existing_soils)
+
+        colors = ["#f59e0b", "#94a3b8", "#10b981", "#6366f1"][:len(soil_means)]
+        ax1.bar(soil_means.index, soil_means.values, color=colors, width=0.55)
+        ax1.set_ylabel("Mean Watering Interval (Days)", fontsize=10)
+        ax1.set_title(
+            "In-Ground Watering Interval by Soil Type (TAW)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        for i, val in enumerate(soil_means.values):
+            ax1.text(i, val + 0.4, f"{val:.1f}d", ha="center", fontsize=9, fontweight="bold")
+
+        # 2. Επίδραση Οργανικής Κάλυψης (Mulching) ανά Εποχή
+        summer_ground = ground_df[ground_df["month"].isin([6, 7, 8])]
+        if not summer_ground.empty:
+            mulch_summary = summer_ground.groupby("has_mulch")["actual_days"].mean()
+            labels = ["Χωρίς Mulch", "Με Mulch (Φλοιός/Άχυρο)"]
+            vals = [mulch_summary.get(0.0, 0), mulch_summary.get(1.0, 0)]
+
+            ax2.bar(labels, vals, color=["#cbd5e1", "#0284c7"], width=0.45)
+            ax2.set_ylabel("Mean Summer Interval (Days)", fontsize=10)
+            ax2.set_title(
+                "Summer Evaporation Reduction via Mulching",
+                fontsize=11,
+                fontweight="bold",
+            )
+            for i, val in enumerate(vals):
+                ax2.text(i, val + 0.3, f"{val:.1f}d", ha="center", fontsize=9, fontweight="bold")
+            if vals[0] > 0:
+                saving_pct = ((vals[1] - vals[0]) / vals[0]) * 100
+                ax2.annotate(
+                    f"+{saving_pct:.1f}% παράταση υγρασίας",
+                    xy=(1, vals[1]),
+                    xytext=(0.5, vals[1] + 1.2),
+                    arrowprops=dict(arrowstyle="->", color="#0284c7", lw=1.2),
+                    fontsize=9,
+                    fontweight="bold",
+                    color="#0f172a",
+                )
+
+        plt.tight_layout()
+        save_path = os.path.join(output_dir, "ground_hydrology_profile.png")
+        plt.savefig(save_path, bbox_inches="tight")
+        plt.close()
+        print(f"[Plots Generated] Saved ground hydrology profile to: {save_path}")
 
     @staticmethod
     def plot_fertilizer_summary(
@@ -235,21 +329,24 @@ class ModelVisualizer:
             return
 
         os.makedirs(output_dir, exist_ok=True)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5), dpi=150)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.2), dpi=150)
 
-        # 1. Κατανομή Αιτιών Απόφασης (Safety Blocks vs Due)
+        # 1. Κατανομή Αιτιών Απόφασης (Safety Blocks vs Due vs Garden Windows)
         reason_counts = df["fertilizer_reason"].value_counts()
         labels_map = {
-            "cycle_reached": "Εγκρίθηκε (Cycle Reached)",
-            "waiting_cycle": "Αναμονή κύκλου (Waiting)",
+            "cycle_reached": "Εγκρίθηκε Γλάστρα (Cycle)",
+            "waiting_cycle": "Αναμονή Κύκλου (Γλάστρα)",
+            "seasonal_window_open": "Εποχικό Παράθυρο (Κήπος)",
+            "seasonal_pause": "Αναστολή Εποχής (Κήπος)",
             "heat_stress_lock": "Μπλοκάρισμα: Καύσωνας (>33°C)",
             "winter_rest": "Μπλοκάρισμα: Χειμώνας",
             "dormancy_freeze": "Μπλοκάρισμα: Λήθαργος",
         }
         labels = [labels_map.get(k, k) for k in reason_counts.index]
-        colors = ["#10b981", "#60a5fa", "#ef4444", "#a855f7", "#f59e0b"][: len(
-            reason_counts
-        )]
+        colors = [
+            "#10b981", "#0284c7", "#60a5fa", "#cbd5e1",
+            "#ef4444", "#a855f7", "#f59e0b"
+        ][: len(reason_counts)]
 
         ax1.pie(
             reason_counts,
@@ -258,9 +355,10 @@ class ModelVisualizer:
             startangle=140,
             colors=colors,
             wedgeprops={"edgecolor": "white", "linewidth": 1.5},
+            textprops={"fontsize": 8.5},
         )
         ax1.set_title(
-            "Fertilizer Decision Distribution & Safety Locks",
+            "Fertilizer Decisions & Safety Locks (Pot & Garden)",
             fontsize=11,
             fontweight="bold",
         )
@@ -275,16 +373,11 @@ class ModelVisualizer:
         fert_by_temp = (
             df_temp.groupby("temp_bin", observed=False)["should_fertilize"]
             .mean()
-            .fillna(0)
-            * 100
+            .fillna(0.0)
+            * 100.0
         )
 
-        bar_colors = [
-            "#38bdf8",
-            "#22c55e",
-            "#eab308",
-            "#ef4444",
-        ]  # Κόκκινο για το >33C (0% λίπανση)
+        bar_colors = ["#38bdf8", "#22c55e", "#eab308", "#ef4444"]
         ax2.bar(
             temp_labels,
             fert_by_temp.values,
@@ -292,13 +385,13 @@ class ModelVisualizer:
             edgecolor="none",
             width=0.55,
         )
-        ax2.set_ylabel("% Diluted Feed Allowed", fontsize=10)
+        ax2.set_ylabel("% Feed Allowed", fontsize=10)
         ax2.set_title(
             "Fertilization Rate vs Ambient Temperature",
             fontsize=11,
             fontweight="bold",
         )
-        ax2.set_ylim(0, max(fert_by_temp.max() * 1.25, 20))
+        ax2.set_ylim(0, max(fert_by_temp.max() * 1.25, 25))
         for i, val in enumerate(fert_by_temp.values):
             ax2.text(
                 i,
