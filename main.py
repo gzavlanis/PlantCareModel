@@ -79,6 +79,10 @@ def main():
         output_dir="reports/figures",
     )
 
+    # 5. Pipeline Architecture Diagram (PNG & Interactive HTML)
+    ModelVisualizer.plot_pipeline_architecture(output_dir="reports/figures")
+    ModelVisualizer.export_pipeline_html(pipeline, output_dir="reports/figures")
+
     print("\n4/4 Exporting to Dart for Flutter...")
     DartCodeExporterV2.export(
         pipeline, output_path="lib_output/smart_watering_engine.dart"

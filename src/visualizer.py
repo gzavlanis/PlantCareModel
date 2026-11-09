@@ -1,10 +1,11 @@
 """Module παραγωγής διαγραμμάτων αξιολόγησης για το υβριδικό μοντέλο ποτίσματος και λίπανσης V3."""
 
-import os
+import os, builtins
 from typing import List
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn import set_config
 from sklearn.pipeline import Pipeline
 
 
@@ -13,13 +14,13 @@ class ModelVisualizer:
 
     @staticmethod
     def plot_evaluation(
-        actual_days: pd.Series,
-        baseline_pred: pd.Series,
-        hybrid_pred: pd.Series,
-        pipeline: Pipeline,
-        categorical_features: List[str],
-        numerical_features: List[str],
-        output_dir: str = "reports/figures",
+            actual_days: pd.Series,
+            baseline_pred: pd.Series,
+            hybrid_pred: pd.Series,
+            pipeline: Pipeline,
+            categorical_features: List[str],
+            numerical_features: List[str],
+            output_dir: str = "reports/figures",
     ) -> None:
         os.makedirs(output_dir, exist_ok=True)
 
@@ -138,11 +139,11 @@ class ModelVisualizer:
 
     @staticmethod
     def plot_category_error_breakdown(
-        test_df: pd.DataFrame,
-        actual_col: str = "actual_days",
-        baseline_col: str = "baseline_prediction",
-        hybrid_col: str = "hybrid_prediction",
-        output_dir: str = "reports/figures",
+            test_df: pd.DataFrame,
+            actual_col: str = "actual_days",
+            baseline_col: str = "baseline_prediction",
+            hybrid_col: str = "hybrid_prediction",
+            output_dir: str = "reports/figures",
     ) -> None:
         """Συγκριτικό MAE ανά κατηγορία φυτού, υλικό δοχείου και περιβάλλον (Γλάστρα vs Έδαφος)."""
         os.makedirs(output_dir, exist_ok=True)
@@ -260,7 +261,7 @@ class ModelVisualizer:
 
     @staticmethod
     def plot_ground_hydrology_profile(
-        df: pd.DataFrame, output_dir: str = "reports/figures"
+            df: pd.DataFrame, output_dir: str = "reports/figures"
     ) -> None:
         """Οπτικοποίηση υδρολογικής απόκρισης του ανοιχτού εδάφους (In-Ground Hydraulics)."""
         ground_df = df[df["planting_environment"] == "in_ground"].copy()
@@ -322,7 +323,7 @@ class ModelVisualizer:
 
     @staticmethod
     def plot_fertilizer_summary(
-        df: pd.DataFrame, output_dir: str = "reports/figures"
+            df: pd.DataFrame, output_dir: str = "reports/figures"
     ) -> None:
         """Οπτικοποίηση κατανομής αποφάσεων λίπανσης & δικλείδων ασφαλείας."""
         if "fertilizer_reason" not in df.columns:
@@ -371,10 +372,10 @@ class ModelVisualizer:
             df_temp["current_temp_celsius"], bins=bins, labels=temp_labels
         )
         fert_by_temp = (
-            df_temp.groupby("temp_bin", observed=False)["should_fertilize"]
-            .mean()
-            .fillna(0.0)
-            * 100.0
+                df_temp.groupby("temp_bin", observed=False)["should_fertilize"]
+                .mean()
+                .fillna(0.0)
+                * 100.0
         )
 
         bar_colors = ["#38bdf8", "#22c55e", "#eab308", "#ef4444"]
@@ -408,15 +409,105 @@ class ModelVisualizer:
         plt.close()
         print(f"[Plots Generated] Saved fertilizer analysis to: {save_path}")
 
+    @staticmethod
+    def plot_pipeline_architecture(output_dir: str = "reports/figures") -> None:
+        """Σχεδιάζει το αρχιτεκτονικό flowchart του υβριδικού pipeline σε PNG."""
+        os.makedirs(output_dir, exist_ok=True)
+
+        fig, ax = plt.subplots(figsize=(14, 7), dpi=160)
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 7)
+        ax.axis("off")
+
+        # Βοηθητική συνάρτηση για σχεδίαση blocks
+        def draw_box(x, y, w, h, title, subtitle, color, edgecolor="#0f172a"):
+            rect = plt.Rectangle(
+                (x, y), w, h,
+                facecolor=color, edgecolor=edgecolor,
+                linewidth=1.5, linestyle="-",
+                transform=ax.transData, zorder=3
+            )
+            ax.add_patch(rect)
+            ax.text(x + w / 2, y + h * 0.62, title,
+                    ha="center", va="center", fontsize=10, fontweight="bold", color="#0f172a")
+            ax.text(x + w / 2, y + h * 0.32, subtitle,
+                    ha="center", va="center", fontsize=8.5, color="#334155")
+
+        def draw_arrow(x1, y1, x2, y2, label=""):
+            ax.annotate(
+                "", xy=(x2, y2), xytext=(x1, y1),
+                arrowprops=dict(arrowstyle="->", color="#0284c7", lw=1.8),
+                zorder=2
+            )
+            if label:
+                ax.text((x1 + x2) / 2, (y1 + y2) / 2 + 0.15, label,
+                        ha="center", fontsize=8, color="#0284c7", fontweight="bold")
+
+        # 1. Inputs
+        draw_box(0.5, 4.3, 2.3, 1.8, "Numerical Inputs (10)", "ET0, Zr, Vol, TAW, Interactions", "#e0f2fe")
+        draw_box(0.5, 1.2, 2.3, 1.8, "Categorical Inputs (5)", "Plant, Env, Pot, Soil, Location", "#fef3c7")
+
+        # 2. Transformers
+        draw_box(3.6, 4.3, 2.2, 1.8, "StandardScaler", "Zero Mean, Unit Variance", "#bae6fd")
+        draw_box(3.6, 1.2, 2.2, 1.8, "OneHotEncoder", "Drop First, Unknown Ignore", "#fde68a")
+
+        # 3. Concatenation / ColumnTransformer
+        draw_box(6.5, 2.2, 1.3, 3.2, "Feature Union", "Combined Dense\nVector", "#cbd5e1")
+
+        # 4. Regressor
+        draw_box(8.3, 2.8, 1.4, 2.0, "HuberRegressor", "α=0.5, ε=1.35\nRobust Residual", "#86efac")
+
+        # Arrows
+        draw_arrow(2.8, 5.2, 3.6, 5.2)
+        draw_arrow(2.8, 2.1, 3.6, 2.1)
+        draw_arrow(5.8, 5.2, 6.5, 4.2, "Scaled Num")
+        draw_arrow(5.8, 2.1, 6.5, 3.2, "One-Hot Dummies")
+        draw_arrow(7.8, 3.8, 8.3, 3.8, "X_train")
+
+        ax.set_title("V3 Hybrid Model Pipeline Architecture (In-Ground & Container)",
+                     fontsize=12, fontweight="bold", pad=15)
+
+        plt.tight_layout()
+        save_path = os.path.join(output_dir, "pipeline_architecture.png")
+        plt.savefig(save_path, bbox_inches="tight")
+        plt.close()
+        print(f"[Plots Generated] Saved pipeline flowchart to: {save_path}")
+
+    @staticmethod
+    def export_pipeline_html(pipeline: Pipeline, output_dir: str = "reports/figures") -> None:
+        """Εξάγει διαδραστικό HTML διάγραμμα του scikit-learn Pipeline (Windows CP1253 safe)."""
+        os.makedirs(output_dir, exist_ok=True)
+        set_config(display="diagram")
+
+        # Patching του builtins.open ώστε οι εσωτερικές κλήσεις της sklearn να διαβάζουν σε utf-8
+        orig_open = builtins.open
+
+        def utf8_open(*args, **kwargs):
+            if "encoding" not in kwargs and (len(args) < 2 or "b" not in args[1]):
+                kwargs["encoding"] = "utf-8"
+            return orig_open(*args, **kwargs)
+
+        try:
+            builtins.open = utf8_open
+            from sklearn.utils import estimator_html_repr
+            html_content = estimator_html_repr(pipeline)
+        finally:
+            builtins.open = orig_open
+
+        save_path = os.path.join(output_dir, "pipeline_diagram.html")
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"[Export HTML] Saved interactive pipeline diagram to: {save_path}")
+
 
 class AccuracyVisualizer:
     @staticmethod
     def plot_tolerance_accuracy(
-        actual_days: pd.Series,
-        baseline_pred: pd.Series,
-        hybrid_pred: pd.Series,
-        output_dir: str = "reports/figures",
-        max_tolerance_days: float = 2.5,
+            actual_days: pd.Series,
+            baseline_pred: pd.Series,
+            hybrid_pred: pd.Series,
+            output_dir: str = "reports/figures",
+            max_tolerance_days: float = 2.5,
     ) -> None:
         os.makedirs(output_dir, exist_ok=True)
 
