@@ -1,0 +1,26 @@
+{
+  "angular_leaf_spot": {
+    "plant_type": "foliage_tropical",
+    "base_interval": 7.0,
+    "default_soil": "balanced_potting",
+    "default_pot": "plastic",
+    "kc_factor": 1.05,
+    "common_name": "Angular Leaf Spot"
+  },
+  "bean_rust": {
+    "plant_type": "foliage_tropical",
+    "base_interval": 7.0,
+    "default_soil": "balanced_potting",
+    "default_pot": "plastic",
+    "kc_factor": 1.05,
+    "common_name": "Bean Rust"
+  },
+  "healthy": {
+    "plant_type": "foliage_tropical",
+    "base_interval": 7.0,
+    "default_soil": "balanced_potting",
+    "default_pot": "plastic",
+    "kc_factor": 1.05,
+    "common_name": "Healthy"
+  }
+}
